@@ -333,32 +333,36 @@ public class BluetoothLeGatt extends Service {
 
     }
 
-    public synchronized void writeCustomCharacteristic(String value) {
+    public synchronized boolean writeCustomCharacteristic(String value) {
         try {
+            sem.acquire();
+
             if (mBluetoothAdapter == null || mBluetoothGatt == null) {
                 Log.w(TAG, "BluetoothAdapter not initialized");
-                return;
+                return false;
             }
 
             /*check if the service is available on the device*/
             BluetoothGattService mCustomService = mBluetoothGatt.getService(UUID.fromString(GattAttributes.UART_SERVICE_UUID));
             if (mCustomService == null) {
                 Log.w(TAG, "Custom BLE Service not found");
-                return;
+                return false;
             }
 
             /*get the read characteristic from the service*/
             BluetoothGattCharacteristic mWriteCharacteristic = mCustomService.getCharacteristic(UUID.fromString(GattAttributes.TX_CHARACTERISTIC));
             mWriteCharacteristic.setValue(value);//, BluetoothGattCharacteristic.FORMAT_UINT8,0);
-            sem.acquire();
             if (mBluetoothGatt.writeCharacteristic(mWriteCharacteristic) == false) {
                 Log.w(TAG, "Failed to write characteristic");
                 sem.release();
+                return false;
             } else {
                 Log.w(TAG, "Success to write characteristic");
+                return true;
             }
         } catch (InterruptedException exc) {
             //System.out.println(exc);
+            return false;
         }
     }
 
@@ -369,7 +373,7 @@ public class BluetoothLeGatt extends Service {
         {
             int begin = i > 1 ? (i - 1) * 20 : 0;
             int end = i == times ? Message.length() : i * 20;
-            Log.w(TAG, "i: " + i + "/" + times +  ", " + begin + "-" + end);
+            Log.w(TAG, "i: " + i + "/" + times +  ", " + begin + "-" + end + ": " + Message.substring(begin, end));
 
             writeCustomCharacteristic(Message.substring(begin, end));
         }
