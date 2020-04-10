@@ -431,7 +431,7 @@ public class BluetoothLeGatt extends Service {
      *
      * @return A {@code List} of supported services.
      */
-    public void readCustomCharacteristic() {
+    public void readAllCustomCharacteristic() {
         try {
             if (mBluetoothAdapter == null || mBluetoothGatt == null) {
                 Log.w(TAG, "BluetoothAdapter not initialized");
@@ -510,7 +510,6 @@ public class BluetoothLeGatt extends Service {
 
             writeCustomCharacteristic(Message.substring(begin, end));
         }
-
     }
 
     public List<BluetoothGattService> getSupportedGattServices() {

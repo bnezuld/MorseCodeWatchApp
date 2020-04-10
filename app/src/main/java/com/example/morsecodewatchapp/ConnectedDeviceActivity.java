@@ -16,7 +16,6 @@
 
 package com.example.morsecodewatchapp;
 
-import android.app.Activity;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattService;
 import android.content.BroadcastReceiver;
@@ -40,10 +39,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
-import android.app.NotificationManager;
 //import android.support.v4.app.NotificationCompat;
 
-import android.app.NotificationChannel ;
 import android.widget.Button ;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -55,7 +52,7 @@ import androidx.appcompat.app.AppCompatActivity;
  * communicates with {@code BluetoothLeGatt}, which in turn interacts with the
  * Bluetooth LE API.
  */
-public class ConnectedDeviceActivity extends AppCompatActivity implements MyListener{
+public class ConnectedDeviceActivity extends AppCompatActivity implements NotificationListener {
     private final static String TAG = ConnectedDeviceActivity.class.getSimpleName();
 
     public static final String EXTRAS_DEVICE_NAME = "DEVICE_NAME";
@@ -373,7 +370,7 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements MyList
     }
 
     @Override
-    public void setValue (String message) {
+    public void NewNotification (String message) {
         if(mBluetoothLeGatt != null) {
             message = message.replaceAll("[^\\p{ASCII}]", "");
             mBluetoothLeGatt.writeMessage(message.toUpperCase() + "\r");

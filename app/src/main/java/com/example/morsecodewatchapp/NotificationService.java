@@ -9,7 +9,7 @@ import android.app.Notification;
 public class NotificationService extends NotificationListenerService {
     private String TAG = this .getClass().getSimpleName() ;
     Context context ;
-    static MyListener myListener ;
+    static NotificationListener notificationListener;
     @Override
     public void onCreate () {
         super .onCreate() ;
@@ -26,8 +26,8 @@ public class NotificationService extends NotificationListenerService {
         String Message = Title + "   " + Text;
         Log. i ( TAG , "********** onNotificationPosted" ) ;
         Log. i ( TAG , "ID :" + sbn.getId()  + " \t " + sbn.getNotification(). tickerText + " \t " + sbn.getPackageName()) ;
-        if(myListener != null && !sbn.getPackageName().equals("com.android.systemui")) {
-            myListener.setValue(Message);
+        if(notificationListener != null && !sbn.getPackageName().equals("com.android.systemui")) {
+            notificationListener.NewNotification(Message);
         }
     }
     @Override
@@ -43,7 +43,7 @@ public class NotificationService extends NotificationListenerService {
         //if(myListener != null)
         //    myListener.setValue("R " + sbn.getId() +  " " + Message) ;
     }
-    public void setListener (MyListener myListener) {
-        NotificationService. myListener = myListener ;
+    public void setListener (NotificationListener notificationListener) {
+        NotificationService.notificationListener = notificationListener;
     }
 }
