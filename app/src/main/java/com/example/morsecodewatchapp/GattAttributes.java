@@ -27,6 +27,18 @@ public class GattAttributes {
     public static String RX_CHARACTERISTIC = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
     public static String TX_CHARACTERISTIC = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 
+    public static String ALERT_NOTIFICATION_SERVICE_UUID = "00001811-0000-1000-8000-00805f9b34fb";
+    public static String UNREAD_CHARACTERISTIC = "00002A45-0000-1000-8000-00805f9b34fb";
+    public static String NEW_ALERT_CHARACTERISTIC = "00002A46-0000-1000-8000-00805f9b34fb";
+
+    public static String UNREAD_CATAGORY = "00002A47-0000-1000-8000-00805f9b34fb";
+    public static String NEW_ALERT_CATAGORY = "00002A48-0000-1000-8000-00805f9b34fb";
+
+    public static String ALERT_NOTIFICATION_CONTROL = "00002A44-0000-1000-8000-00805f9b34fb";
+
+    public static String CLIENT_CHARACTERISTIC_CONFIGURATION = "00002902-0000-1000-8000-00805f9b34fb";
+
+
     static {
         // Sample Services.
         attributes.put(UART_SERVICE_UUID, "UART service");
