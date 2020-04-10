@@ -38,6 +38,7 @@ import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.UUID;
 
 //import android.support.v4.app.NotificationCompat;
 
@@ -365,7 +366,7 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements Notifi
 
     public void onClickRead(View v){
         if(mBluetoothLeGatt != null) {
-            mBluetoothLeGatt.readCustomCharacteristic();
+            mBluetoothLeGatt.readAllCustomCharacteristic();
         }
     }
 
@@ -373,8 +374,9 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements Notifi
     public void NewNotification (String message) {
         if(mBluetoothLeGatt != null) {
             message = message.replaceAll("[^\\p{ASCII}]", "");
-            mBluetoothLeGatt.writeMessage(message.toUpperCase() + "\r");
-
+            message += mBluetoothLeGatt.updateCharacteristicValue(mBluetoothLeGatt.mainDevice,
+                    mBluetoothLeGatt.alertNotificationService.getCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC)),
+                    message);
         }
         txtView .append( " \n " + message) ;
     }
