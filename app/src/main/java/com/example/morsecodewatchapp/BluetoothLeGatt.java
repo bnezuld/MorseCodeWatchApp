@@ -517,9 +517,19 @@ public class BluetoothLeGatt extends Service {
         }
     }
 
-    public boolean updateCharacteristicValue(BluetoothDevice device, BluetoothGattCharacteristic characteristic, String value)
+    public void updateCharacteristicValue(BluetoothGattCharacteristic characteristic, String value)
     {
         characteristic.setValue(new byte[]{0x03, 0x01, 0x4d, 0x61,0x72, 0x79});
+    }
+
+    public boolean notifyCharacteristicChange(BluetoothDevice device, BluetoothGattCharacteristic characteristic)
+    {
         return bluetoothGattServer.notifyCharacteristicChanged(device, characteristic, false);
+    }
+
+    public boolean updateCharacteristicValueNotifyDevice(BluetoothDevice device, BluetoothGattCharacteristic characteristic, String value)
+    {
+        updateCharacteristicValue(characteristic, value);
+        return notifyCharacteristicChange(device, characteristic);
     }
 }

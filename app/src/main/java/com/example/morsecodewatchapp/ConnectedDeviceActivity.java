@@ -371,10 +371,12 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements Notifi
     }
 
     @Override
-    public void NewNotification (String message) {
+    public void NewNotification (String message, String packageName) {
         if(mBluetoothLeGatt != null) {
             message = message.replaceAll("[^\\p{ASCII}]", "");
-            message += mBluetoothLeGatt.updateCharacteristicValue(mBluetoothLeGatt.mainDevice,
+            message = "{" + packageName + "}: " + message;
+            //instead of updating and notifying might change to notify only once i receive notification to send latest new alert
+            mBluetoothLeGatt.updateCharacteristicValueNotifyDevice(mBluetoothLeGatt.mainDevice,
                     mBluetoothLeGatt.alertNotificationService.getCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC)),
                     message);
         }
