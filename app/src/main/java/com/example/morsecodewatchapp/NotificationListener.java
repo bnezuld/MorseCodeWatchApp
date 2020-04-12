@@ -1,5 +1,5 @@
 package com.example.morsecodewatchapp;
 
 public interface NotificationListener {
-    void NewNotification(String Notification, String PackageName) ;
+    void NewNotification(String Notification, NotificationService.NotificationType notificationType) ;
 }

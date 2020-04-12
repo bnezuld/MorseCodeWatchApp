@@ -16,6 +16,8 @@
 
 package com.example.morsecodewatchapp;
 
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattService;
 import android.content.BroadcastReceiver;
@@ -45,6 +47,7 @@ import java.util.UUID;
 import android.widget.Button ;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.NotificationCompat;
 
 
 /**
@@ -195,12 +198,20 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements Notifi
         btnCreateNotification.setOnClickListener( new View.OnClickListener() {
             @Override
             public void onClick (View v) {
-                /*NotificationManager mNotificationManager = (NotificationManager) getSystemService( NOTIFICATION_SERVICE ) ;
-                NotificationCompat.Builder mBuilder = new NotificationCompat.Builder(DeviceControlActivity.this, default_notification_channel_id ) ;                mBuilder.setContentTitle( "My Notification" ) ;
-                mBuilder.setContentText( "Notification Listener Service Example" ) ;
-                mBuilder.setTicker( "Notification Listener Service Example" ) ;
-                mBuilder.setSmallIcon(R.drawable.ic_launcher ) ;
-                mBuilder.setAutoCancel( true ) ;
+                NotificationManager mNotificationManager =
+                        (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    NotificationChannel channel = new NotificationChannel("YOUR_CHANNEL_ID",
+                            "YOUR_CHANNEL_NAME",
+                            NotificationManager.IMPORTANCE_DEFAULT);
+                    channel.setDescription("YOUR_NOTIFICATION_CHANNEL_DESCRIPTION");
+                    mNotificationManager.createNotificationChannel(channel);
+                }
+                NotificationCompat.Builder mBuilder = new NotificationCompat.Builder(getApplicationContext(), "YOUR_CHANNEL_ID")
+                        .setSmallIcon(R.drawable.notification_icon)
+                        .setContentTitle("textTitle")
+                        .setContentText("textContent")
+                        .setPriority(NotificationCompat.PRIORITY_DEFAULT);
                 if (android.os.Build.VERSION. SDK_INT >= android.os.Build.VERSION_CODES. O ) {
                     int importance = NotificationManager. IMPORTANCE_HIGH ;
                     NotificationChannel notificationChannel = new NotificationChannel( NOTIFICATION_CHANNEL_ID , "NOTIFICATION_CHANNEL_NAME" , importance) ;
@@ -209,7 +220,7 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements Notifi
                     mNotificationManager.createNotificationChannel(notificationChannel) ;
                 }
                 assert mNotificationManager != null;
-                mNotificationManager.notify(( int ) System. currentTimeMillis () , mBuilder.build()) ;*/
+                mNotificationManager.notify(( int ) System. currentTimeMillis () , mBuilder.build()) ;
             }
         }) ;
 
@@ -371,11 +382,10 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements Notifi
     }
 
     @Override
-    public void NewNotification (String message, String packageName) {
+    public void NewNotification (String message, NotificationService.NotificationType notificationType) {
         if(mBluetoothLeGatt != null) {
             message = message.replaceAll("[^\\p{ASCII}]", "");
-            message = "{" + packageName + "}: " + message;
-            //instead of updating and notifying might change to notify only once i receive notification to send latest new alert
+            //instead of updating and notifying might change when the characteristic is read it will get the next in the queue
             mBluetoothLeGatt.updateCharacteristicValueNotifyDevice(mBluetoothLeGatt.mainDevice,
                     mBluetoothLeGatt.alertNotificationService.getCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC)),
                     message);
