@@ -522,10 +522,7 @@ public class BluetoothLeGatt extends Service {
 
     public void updateCharacteristicValue(BluetoothGattCharacteristic characteristic, String value)
     {
-        String message = String.valueOf((char)0x03) + String.valueOf((char)0x01);
-
-        message +=  "Mary Test 123456789 123456789 123456789";
-        characteristic.setValue(message);//new byte[]{0x03, 0x01, 0x4d, 0x61,0x72, 0x79});
+        characteristic.setValue(value);//new byte[]{0x03, 0x01, 0x4d, 0x61,0x72, 0x79});
     }
 
     public boolean notifyCharacteristicChange(BluetoothDevice device, BluetoothGattCharacteristic characteristic)
