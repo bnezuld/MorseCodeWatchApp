@@ -387,7 +387,7 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements Notifi
             message = message.replaceAll("[^\\p{ASCII}]", "");
             EditText editText = findViewById(R.id.editText);
             String textBoxString = editText.getText().toString();
-            message = String.valueOf((char)0x03) + String.valueOf((char)0x01) + textBoxString;
+            message = String.valueOf((char)0x03) + String.valueOf((char)0x01) + textBoxString.replaceAll("[^\\p{ASCII}]", "");
             //instead of updating and notifying might change when the characteristic is read it will get the next in the queue
             mBluetoothLeGatt.updateCharacteristicValueNotifyDevice(mBluetoothLeGatt.mainDevice,
                     mBluetoothLeGatt.alertNotificationService.getCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC)),

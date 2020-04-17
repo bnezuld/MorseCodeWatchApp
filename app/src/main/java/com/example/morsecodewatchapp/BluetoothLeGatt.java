@@ -276,13 +276,31 @@ public class BluetoothLeGatt extends Service {
             return false;
         }
 
+        if(CreateAdvertisedService() == false){
+            Log.e(TAG, "Unable to obtain Advertise service.");
+            return false;
+        }
+
+        return true;
+    }
+
+    public boolean CreateAdvertisedService(){
+
+        if (mBluetoothAdapter == null) {
+            Log.e(TAG, "Unable to obtain a BluetoothAdapter.");
+            return false;
+        }
         bluetoothLeAdvertiser = mBluetoothAdapter.getBluetoothLeAdvertiser();
         bluetoothLeAdvertiser.startAdvertising(settings, advertiseData, scanResponseData, advertiseCallback);
 
+
+        if (mBluetoothManager == null) {
+            Log.e(TAG, "Unable to obtain a BluetoothManager.");
+            return false;
+        }
         bluetoothGattServer = mBluetoothManager.openGattServer(getApplicationContext(), mGattServercallback);
         alertNotificationService = new BluetoothGattService(UUID.fromString(GattAttributes.ALERT_NOTIFICATION_SERVICE_UUID), BluetoothGattService.SERVICE_TYPE_PRIMARY);
 
-        //add a read characteristic.
         BluetoothGattDescriptor descriptor;
         byte[] byteFilled = {127};
         BluetoothGattCharacteristic characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.UNREAD_CHARACTERISTIC), BluetoothGattCharacteristic.PROPERTY_READ  & BluetoothGattCharacteristic.PROPERTY_NOTIFY, BluetoothGattCharacteristic.PERMISSION_READ);
@@ -315,8 +333,23 @@ public class BluetoothLeGatt extends Service {
         alertNotificationService.addCharacteristic(characteristic);
 
         bluetoothGattServer.addService(alertNotificationService);
+        return true;
+    }
 
-        //bluetoothGattServer.notifyCharacteristicChanged(mainDevice, characteristic, true);
+    public boolean RemoveAdvertisedService(){
+        if (bluetoothGattServer == null) {
+            Log.e(TAG, "Unable to obtain a BluetoothGattServer.");
+            return false;
+        }
+        bluetoothGattServer.removeService(alertNotificationService);
+        //bluetoothGattServer.close();
+
+        if (mBluetoothAdapter == null) {
+            Log.e(TAG, "Unable to obtain a BluetoothAdapter.");
+            return false;
+        }
+        bluetoothLeAdvertiser.stopAdvertising(advertiseCallback);
+
         return true;
     }
 
