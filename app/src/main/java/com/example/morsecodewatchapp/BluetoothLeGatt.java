@@ -26,6 +26,7 @@ import android.util.Log;
 
 import androidx.annotation.RequiresApi;
 
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
@@ -555,6 +556,11 @@ public class BluetoothLeGatt extends Service {
 
     public void updateCharacteristicValue(BluetoothGattCharacteristic characteristic, String value)
     {
+        if(value.length() < 20) {
+            char[] charArray = new char[20 - value.length()];
+            Arrays.fill(charArray, '\0');
+            value += new String(charArray);
+        }
         characteristic.setValue(value);//new byte[]{0x03, 0x01, 0x4d, 0x61,0x72, 0x79});
     }
 
