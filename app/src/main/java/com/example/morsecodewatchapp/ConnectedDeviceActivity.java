@@ -29,6 +29,7 @@ import android.content.ServiceConnection;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -99,6 +100,19 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements Notifi
             mBluetoothLeGatt = null;
         }
     };
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event)
+    {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK)
+        {
+            // handle back press
+            // if (event.getAction() == KeyEvent.ACTION_DOWN)
+            mBluetoothLeGatt.RemoveAdvertisedService();
+            mBluetoothLeGatt.stopSelf();
+        }
+        return super.dispatchKeyEvent(event);
+    }
 
     // Handles various events fired by the Service.
     // ACTION_GATT_CONNECTED: connected to a GATT server.

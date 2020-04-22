@@ -164,7 +164,7 @@ public class BluetoothLeGatt extends Service {
             super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
             byte[] value = characteristic.getValue();
             if(bluetoothGattServer.sendResponse ( device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value )) {
-
+                //characteristic.setValue((byte[])null);
                 //service.getCharateristic(characteristic.getUuid().toString()) Map[characteristic.getUuid().toString()].getNext();
             }
         }
@@ -291,49 +291,52 @@ public class BluetoothLeGatt extends Service {
             Log.e(TAG, "Unable to obtain a BluetoothAdapter.");
             return false;
         }
-        bluetoothLeAdvertiser = mBluetoothAdapter.getBluetoothLeAdvertiser();
-        bluetoothLeAdvertiser.startAdvertising(settings, advertiseData, scanResponseData, advertiseCallback);
+        if(bluetoothLeAdvertiser == null) {
+            bluetoothLeAdvertiser = mBluetoothAdapter.getBluetoothLeAdvertiser();
+            bluetoothLeAdvertiser.startAdvertising(settings, advertiseData, scanResponseData, advertiseCallback);
 
 
-        if (mBluetoothManager == null) {
-            Log.e(TAG, "Unable to obtain a BluetoothManager.");
-            return false;
+            if (mBluetoothManager == null) {
+                Log.e(TAG, "Unable to obtain a BluetoothManager.");
+                return false;
+            }
+            bluetoothGattServer = mBluetoothManager.openGattServer(getApplicationContext(), mGattServercallback);
+            alertNotificationService = new BluetoothGattService(UUID.fromString(GattAttributes.ALERT_NOTIFICATION_SERVICE_UUID), BluetoothGattService.SERVICE_TYPE_PRIMARY);
+
+            BluetoothGattDescriptor descriptor;
+            byte[] byteFilled = {127};
+            BluetoothGattCharacteristic characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.UNREAD_CHARACTERISTIC), BluetoothGattCharacteristic.PROPERTY_READ & BluetoothGattCharacteristic.PROPERTY_NOTIFY, BluetoothGattCharacteristic.PERMISSION_READ);
+            descriptor = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION), BluetoothGattDescriptor.PERMISSION_READ);
+            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+            characteristic.addDescriptor(descriptor);
+            alertNotificationService.addCharacteristic(characteristic);
+
+            characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC), BluetoothGattCharacteristic.PROPERTY_READ & BluetoothGattCharacteristic.PROPERTY_NOTIFY, BluetoothGattCharacteristic.PERMISSION_READ);
+            descriptor = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION), BluetoothGattDescriptor.PERMISSION_READ);
+            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+            characteristic.addDescriptor(descriptor);
+            alertNotificationService.addCharacteristic(characteristic);
+
+            characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.UNREAD_CATAGORY), BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PERMISSION_READ);
+            characteristic.setValue(byteFilled);
+            descriptor = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION), BluetoothGattDescriptor.PERMISSION_READ);
+            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+            characteristic.addDescriptor(descriptor);
+            alertNotificationService.addCharacteristic(characteristic);
+
+            characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CATAGORY), BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PERMISSION_READ);
+            characteristic.setValue(byteFilled);
+            descriptor = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION), BluetoothGattDescriptor.PERMISSION_READ);
+            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+            characteristic.addDescriptor(descriptor);
+            alertNotificationService.addCharacteristic(characteristic);
+
+            characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.ALERT_NOTIFICATION_CONTROL), BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PROPERTY_READ);
+            alertNotificationService.addCharacteristic(characteristic);
+
+            bluetoothGattServer.addService(alertNotificationService);
+            return true;
         }
-        bluetoothGattServer = mBluetoothManager.openGattServer(getApplicationContext(), mGattServercallback);
-        alertNotificationService = new BluetoothGattService(UUID.fromString(GattAttributes.ALERT_NOTIFICATION_SERVICE_UUID), BluetoothGattService.SERVICE_TYPE_PRIMARY);
-
-        BluetoothGattDescriptor descriptor;
-        byte[] byteFilled = {127};
-        BluetoothGattCharacteristic characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.UNREAD_CHARACTERISTIC), BluetoothGattCharacteristic.PROPERTY_READ  & BluetoothGattCharacteristic.PROPERTY_NOTIFY, BluetoothGattCharacteristic.PERMISSION_READ);
-        descriptor = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION),BluetoothGattDescriptor.PERMISSION_READ);
-        descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-        characteristic.addDescriptor(descriptor);
-        alertNotificationService.addCharacteristic(characteristic);
-
-        characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC), BluetoothGattCharacteristic.PROPERTY_READ & BluetoothGattCharacteristic.PROPERTY_NOTIFY, BluetoothGattCharacteristic.PERMISSION_READ);
-        descriptor = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION),BluetoothGattDescriptor.PERMISSION_READ);
-        descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-        characteristic.addDescriptor(descriptor);
-        alertNotificationService.addCharacteristic(characteristic);
-
-        characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.UNREAD_CATAGORY), BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PERMISSION_READ);
-        characteristic.setValue(byteFilled);
-        descriptor = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION),BluetoothGattDescriptor.PERMISSION_READ);
-        descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-        characteristic.addDescriptor(descriptor);
-        alertNotificationService.addCharacteristic(characteristic);
-
-        characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CATAGORY), BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PERMISSION_READ);
-        characteristic.setValue(byteFilled);
-        descriptor = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION),BluetoothGattDescriptor.PERMISSION_READ);
-        descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-        characteristic.addDescriptor(descriptor);
-        alertNotificationService.addCharacteristic(characteristic);
-
-        characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.ALERT_NOTIFICATION_CONTROL), BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PROPERTY_READ);
-        alertNotificationService.addCharacteristic(characteristic);
-
-        bluetoothGattServer.addService(alertNotificationService);
         return true;
     }
 
