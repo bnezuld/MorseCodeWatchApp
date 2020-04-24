@@ -202,8 +202,9 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements Notifi
 
         //getActionBar().setTitle(mDeviceName);
         //getActionBar().setDisplayHomeAsUpEnabled(true);
-        Intent gattServiceIntent = new Intent(this, BluetoothLeGatt.class);
+        Intent gattServiceIntent = new Intent(getBaseContext(), BluetoothLeGatt.class);
         bindService(gattServiceIntent, mServiceConnection, BIND_AUTO_CREATE);
+        //startService(new Intent(getBaseContext(), BluetoothLeGatt.class));
 
         new NotificationService().setListener( this ) ;
         txtView = findViewById(R.id. textView ) ;

@@ -341,6 +341,10 @@ public class BluetoothLeGatt extends Service {
     }
 
     public boolean RemoveAdvertisedService(){
+        if(bluetoothLeAdvertiser == null){
+            Log.e(TAG, "Unable to obtain a BluetoothLeAdvertiser.");
+            return false;
+        }
         if (bluetoothGattServer == null) {
             Log.e(TAG, "Unable to obtain a BluetoothGattServer.");
             return false;
@@ -353,6 +357,7 @@ public class BluetoothLeGatt extends Service {
             return false;
         }
         bluetoothLeAdvertiser.stopAdvertising(advertiseCallback);
+        bluetoothLeAdvertiser = null;
 
         return true;
     }
@@ -421,6 +426,8 @@ public class BluetoothLeGatt extends Service {
         if (mBluetoothGatt == null) {
             return;
         }
+        RemoveAdvertisedService();
+
         mBluetoothGatt.close();
         mBluetoothGatt = null;
     }
