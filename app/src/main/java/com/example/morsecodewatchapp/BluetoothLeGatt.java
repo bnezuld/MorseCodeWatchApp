@@ -27,9 +27,12 @@ import android.util.Log;
 import androidx.annotation.RequiresApi;
 
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
+import java.util.Stack;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
 
@@ -69,6 +72,8 @@ public class BluetoothLeGatt extends Service {
 
     private Queue<String> WriteQueue = new LinkedList<>();
     private Semaphore sem = new Semaphore(1);
+
+    private Map<String, Stack<Queue<String>>> chracteristicWriteQueue = new HashMap<>();
 
     AdvertiseSettings settings = new AdvertiseSettings.Builder()
             .setConnectable(true)
@@ -164,6 +169,23 @@ public class BluetoothLeGatt extends Service {
             super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
             byte[] value = characteristic.getValue();
             if(bluetoothGattServer.sendResponse ( device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value )) {
+                String uuid = characteristic.getUuid().toString();
+                if(chracteristicWriteQueue.containsKey(uuid) && !chracteristicWriteQueue.get(uuid).isEmpty()) //stack not empty(not notifications)
+                {
+                    chracteristicWriteQueue.get(uuid).peek().poll();
+                    String nextMessageSegment = chracteristicWriteQueue.get(uuid).peek().peek();
+                    if(value[2] == 0x01) //the message contains more segments
+                    {
+                        updateCharacteristicValueNotifyDevice(device, characteristic, nextMessageSegment);
+                        //updateCharacteristicValue(characteristic, nextMessageSegment);
+                    }else{ //this is the last segment, so the next time it will read the next newest notification
+                        chracteristicWriteQueue.get(uuid).pop();//remove currect stacked notification
+                        String nextMessageStart = chracteristicWriteQueue.get(uuid).peek().peek();//start the message for next notification
+                        updateCharacteristicValue(characteristic, nextMessageStart);
+                    }
+                }else{
+                    characteristic.setValue((byte[])null);
+                }
                 //characteristic.setValue((byte[])null);
                 //service.getCharateristic(characteristic.getUuid().toString()) Map[characteristic.getUuid().toString()].getNext();
             }
@@ -172,11 +194,19 @@ public class BluetoothLeGatt extends Service {
         @Override
         public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
             super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value);
+            characteristic.setValue(value);
+            if(responseNeeded) {
+                bluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value);
+            }
         }
 
         @Override
         public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
             super.onDescriptorWriteRequest(device, requestId, descriptor, preparedWrite, responseNeeded, offset, value);
+            descriptor.setValue(value);
+            if(responseNeeded) {
+                bluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value);
+            }
         }
 
         @Override
@@ -305,34 +335,47 @@ public class BluetoothLeGatt extends Service {
 
             BluetoothGattDescriptor descriptor;
             byte[] byteFilled = {127};
-            BluetoothGattCharacteristic characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.UNREAD_CHARACTERISTIC), BluetoothGattCharacteristic.PROPERTY_READ & BluetoothGattCharacteristic.PROPERTY_NOTIFY, BluetoothGattCharacteristic.PERMISSION_READ);
-            descriptor = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION), BluetoothGattDescriptor.PERMISSION_READ);
-            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-            characteristic.addDescriptor(descriptor);
-            alertNotificationService.addCharacteristic(characteristic);
+            BluetoothGattCharacteristic mSupportedNewAlertCategory = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CATAGORY),
+                    BluetoothGattCharacteristic.PROPERTY_READ | BluetoothGattCharacteristic.PROPERTY_WRITE,
+                    BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE);
+            mSupportedNewAlertCategory.setValue(new byte[]{0x1f});
+            /*
+             * New alert part (char & descriptor)
+             * */
+            BluetoothGattDescriptor clientCharacteristicConfigNa = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION),
+                    BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE);
+            clientCharacteristicConfigNa.setValue(new byte[]{1});
 
-            characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC), BluetoothGattCharacteristic.PROPERTY_READ & BluetoothGattCharacteristic.PROPERTY_NOTIFY, BluetoothGattCharacteristic.PERMISSION_READ);
-            descriptor = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION), BluetoothGattDescriptor.PERMISSION_READ);
-            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-            characteristic.addDescriptor(descriptor);
-            alertNotificationService.addCharacteristic(characteristic);
+            BluetoothGattCharacteristic mNewAlert = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC),
+                    BluetoothGattCharacteristic.PROPERTY_WRITE |BluetoothGattCharacteristic.PROPERTY_INDICATE | BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_READ,
+                    BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE);
 
-            characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.UNREAD_CATAGORY), BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PERMISSION_READ);
-            characteristic.setValue(byteFilled);
-            descriptor = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION), BluetoothGattDescriptor.PERMISSION_READ);
-            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-            characteristic.addDescriptor(descriptor);
-            alertNotificationService.addCharacteristic(characteristic);
+            mNewAlert.addDescriptor(clientCharacteristicConfigNa);
+            /*
+             * Unread alert status associated with new alert
+             * */
+            BluetoothGattDescriptor clientCharacteristicConfigUa = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION), BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE);
+            clientCharacteristicConfigUa.setValue(new byte[]{1});
 
-            characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CATAGORY), BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PERMISSION_READ);
-            characteristic.setValue(byteFilled);
-            descriptor = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION), BluetoothGattDescriptor.PERMISSION_READ);
-            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-            characteristic.addDescriptor(descriptor);
-            alertNotificationService.addCharacteristic(characteristic);
+            BluetoothGattCharacteristic mUnreadAlertStatus = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.UNREAD_CHARACTERISTIC),
+                    BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_INDICATE | BluetoothGattCharacteristic.PROPERTY_READ | BluetoothGattCharacteristic.PROPERTY_WRITE,
+                    BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE);
+            mUnreadAlertStatus.addDescriptor(clientCharacteristicConfigUa);
 
-            characteristic = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.ALERT_NOTIFICATION_CONTROL), BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PROPERTY_READ);
-            alertNotificationService.addCharacteristic(characteristic);
+            BluetoothGattCharacteristic mSupportedUnreadCategory = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.UNREAD_CATAGORY),
+                    BluetoothGattCharacteristic.PROPERTY_READ | BluetoothGattCharacteristic.PROPERTY_INDICATE | BluetoothGattCharacteristic.PROPERTY_NOTIFY  | BluetoothGattCharacteristic.PROPERTY_WRITE,
+                    BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE);
+            mSupportedUnreadCategory.setValue(new byte[]{0x1f});
+
+            BluetoothGattCharacteristic mAlertNotificationControlPoint = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.ALERT_NOTIFICATION_CONTROL),
+                    BluetoothGattCharacteristic.PROPERTY_READ | BluetoothGattCharacteristic.PROPERTY_INDICATE | BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_WRITE,
+                    BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE);
+
+            alertNotificationService.addCharacteristic(mSupportedNewAlertCategory);
+            alertNotificationService.addCharacteristic(mNewAlert);
+            alertNotificationService.addCharacteristic(mSupportedUnreadCategory);
+            alertNotificationService.addCharacteristic(mUnreadAlertStatus);
+            alertNotificationService.addCharacteristic(mAlertNotificationControlPoint);
 
             bluetoothGattServer.addService(alertNotificationService);
             return true;
@@ -576,12 +619,27 @@ public class BluetoothLeGatt extends Service {
 
     public boolean notifyCharacteristicChange(BluetoothDevice device, BluetoothGattCharacteristic characteristic)
     {
-        return bluetoothGattServer.notifyCharacteristicChanged(device, characteristic, false);
+        if(characteristic.getDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION)).getValue() == BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) {
+            return bluetoothGattServer.notifyCharacteristicChanged(device, characteristic, false);
+        }
+        return false;
     }
 
     public boolean updateCharacteristicValueNotifyDevice(BluetoothDevice device, BluetoothGattCharacteristic characteristic, String value)
     {
         updateCharacteristicValue(characteristic, value);
         return notifyCharacteristicChange(device, characteristic);
+    }
+
+    public boolean AddMessageToCharacteristic(BluetoothGattCharacteristic characteristic, Queue<String> message)
+    {
+        String uuid = characteristic.getUuid().toString();
+        if(!chracteristicWriteQueue.containsKey(uuid))
+        {
+            chracteristicWriteQueue.put(uuid, new Stack<Queue<String>>());
+        }
+        chracteristicWriteQueue.get(uuid).add(message);
+        updateCharacteristicValue(characteristic, message.peek());
+        return true;
     }
 }
