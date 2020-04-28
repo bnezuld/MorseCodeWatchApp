@@ -185,27 +185,7 @@ public class BluetoothLeGatt extends Service {
         public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) {
             super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
             byte[] value = characteristic.getValue();
-            if(bluetoothGattServer.sendResponse ( device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value )) {
-                String uuid = characteristic.getUuid().toString();
-                if(chracteristicWriteQueue.containsKey(uuid) && !chracteristicWriteQueue.get(uuid).isEmpty()) //stack not empty(not notifications)
-                {
-                    chracteristicWriteQueue.get(uuid).peek().poll();
-                    String nextMessageSegment = chracteristicWriteQueue.get(uuid).peek().peek();
-                    if(value[2] == 0x01) //the message contains more segments
-                    {
-                        //updateCharacteristicValueNotifyDevice(device, characteristic, nextMessageSegment);
-                        updateCharacteristicValue(characteristic, nextMessageSegment);
-                    }else{ //this is the last segment, so the next time it will read the next newest notification
-                        chracteristicWriteQueue.get(uuid).pop();//remove currect stacked notification
-                        String nextMessageStart = chracteristicWriteQueue.get(uuid).peek().peek();//start the message for next notification
-                        updateCharacteristicValue(characteristic, nextMessageStart);
-                    }
-                }else{
-                    characteristic.setValue((byte[])null);
-                }
-                //characteristic.setValue((byte[])null);
-                //service.getCharateristic(characteristic.getUuid().toString()) Map[characteristic.getUuid().toString()].getNext();
-            }
+            bluetoothGattServer.sendResponse ( device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value );
         }
 
         @Override
@@ -213,35 +193,39 @@ public class BluetoothLeGatt extends Service {
             super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value);
             characteristic.setValue(value);
             if(characteristic.getUuid().toString().trim().equalsIgnoreCase(GattAttributes.ALERT_NOTIFICATION_CONTROL)){
+                String uuid = null;
                 switch (ble_ans_command_id_t.values()[(int)value[0]]) {
                     case ANS_NOTIFY_NEW_INCOMING_ALERT_IMMEDIATELY:
-                        BluetoothGattCharacteristic tempChracteristic = alertNotificationService.getCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC));
-                        String uuid = GattAttributes.NEW_ALERT_CHARACTERISTIC;
-                        if(chracteristicWriteQueue.containsKey(uuid) && !chracteristicWriteQueue.get(uuid).isEmpty()) //stack not empty(not notifications)
-                        {
-                            String nextMessageSegment = chracteristicWriteQueue.get(uuid).peek().poll();
-                            if(nextMessageSegment.charAt(2) == 0x01) //the message contains more segments
-                            {
-                                //updateCharacteristicValueNotifyDevice(device, characteristic, nextMessageSegment);
-                                updateCharacteristicValue(tempChracteristic, nextMessageSegment);
-                            }else{ //this is the last segment, so the next time it will read the next newest notification
-                                chracteristicWriteQueue.get(uuid).pop();//remove currect stacked notification
-                                updateCharacteristicValue(tempChracteristic, nextMessageSegment);
-                                //String nextMessageStart = chracteristicWriteQueue.get(uuid).peek().peek();//start the message for next notification
-                                //updateCharacteristicValue(characteristic, nextMessageStart);
-                            }
-                        }else{
-                            tempChracteristic.setValue((byte[])null);
-                        }
-                        if(responseNeeded) {
-                            bluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value);
-                        }
-                        notifyCharacteristicChange(device, tempChracteristic);
-                        return;
-                        //break;
-                    case ANS_NOTIFY_UNREAD_CATEGORY_STATUS_IMMEDIATELY:
-                        notifyCharacteristicChange(device, alertNotificationService.getCharacteristic(UUID.fromString(GattAttributes.UNREAD_CHARACTERISTIC)));
+                        uuid = GattAttributes.NEW_ALERT_CHARACTERISTIC;
                         break;
+                    case ANS_NOTIFY_UNREAD_CATEGORY_STATUS_IMMEDIATELY:
+                        uuid = GattAttributes.UNREAD_CHARACTERISTIC;
+                        break;
+                }
+                if(uuid != null)
+                {
+                    BluetoothGattCharacteristic tempChracteristic = alertNotificationService.getCharacteristic(UUID.fromString(uuid));
+                    if(chracteristicWriteQueue.containsKey(uuid) && !chracteristicWriteQueue.get(uuid).isEmpty()) //stack not empty(not notifications)
+                    {
+                        String nextMessageSegment = chracteristicWriteQueue.get(uuid).peek().poll();
+                        if(nextMessageSegment.charAt(2) == 0x01) //the message contains more segments
+                        {
+                            //updateCharacteristicValueNotifyDevice(device, characteristic, nextMessageSegment);
+                            updateCharacteristicValue(tempChracteristic, nextMessageSegment);
+                        }else{ //this is the last segment, so the next time it will read the next newest notification
+                            chracteristicWriteQueue.get(uuid).pop();//remove currect stacked notification
+                            updateCharacteristicValue(tempChracteristic, nextMessageSegment);
+                            //String nextMessageStart = chracteristicWriteQueue.get(uuid).peek().peek();//start the message for next notification
+                            //updateCharacteristicValue(characteristic, nextMessageStart);
+                        }
+                    }else{
+                        tempChracteristic.setValue((byte[])null);
+                    }
+                    if(responseNeeded) {
+                        bluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value);
+                    }
+                    notifyCharacteristicChange(device, tempChracteristic);
+                    return;
                 }
             }
             if(responseNeeded) {
