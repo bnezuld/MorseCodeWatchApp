@@ -1,5 +1,7 @@
 package com.example.morsecodewatchapp;
 
+import android.app.Notification;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -25,6 +27,7 @@ import android.os.ParcelUuid;
 import android.util.Log;
 
 import androidx.annotation.RequiresApi;
+import androidx.core.app.NotificationCompat;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -73,7 +76,20 @@ public class BluetoothLeGatt extends Service {
     private Queue<String> WriteQueue = new LinkedList<>();
     private Semaphore sem = new Semaphore(1);
 
-    private Map<String, Stack<Queue<String>>> chracteristicWriteQueue = new HashMap<>();
+    private class Notification
+    {
+        Queue<String> messages;
+        NotificationCompat.Action action;
+
+        public Notification(Queue<String> _messages, NotificationCompat.Action _action)
+        {
+            messages = _messages;
+            action = _action;
+        }
+    }
+
+    private Map<String, Stack<Notification>> chracteristicWriteQueue = new HashMap<>();
+    Notification lastNotificationSent = null;
 
     AdvertiseSettings settings = new AdvertiseSettings.Builder()
             .setConnectable(true)
@@ -96,7 +112,8 @@ public class BluetoothLeGatt extends Service {
                 ANS_DISABLE_NEW_INCOMING_ALERT_NOTIFICATION(2),                /**< Disable New Incoming Alert Notification.*/
                 ANS_DISABLE_UNREAD_CATEGORY_STATUS_NOTIFICATION(3),            /**< Disable Unread Category Status Notification.*/
                 ANS_NOTIFY_NEW_INCOMING_ALERT_IMMEDIATELY(4),                  /**< Notify New Incoming Alert immediately.*/
-                ANS_NOTIFY_UNREAD_CATEGORY_STATUS_IMMEDIATELY(5);               /**< Notify Unread Category Status immediately.*/
+                ANS_NOTIFY_UNREAD_CATEGORY_STATUS_IMMEDIATELY(5),              /**< Notify Unread Category Status immediately.*/
+                ANS_REPLY_NEW_ALERT(6);                                        /**< Reply New Alert.*/
 
                 private final int value;
                 private ble_ans_command_id_t(int value) {
@@ -201,13 +218,32 @@ public class BluetoothLeGatt extends Service {
                     case ANS_NOTIFY_UNREAD_CATEGORY_STATUS_IMMEDIATELY:
                         uuid = GattAttributes.UNREAD_CHARACTERISTIC;
                         break;
+                    case ANS_REPLY_NEW_ALERT:
+                        uuid = null;
+                        try {
+                            int end = 20;
+                            for (int i = 2; i < 20; i++) {
+                                if(value[i] == 0){
+                                    end = i;
+                                    break;
+                                }
+                            }
+                            byte[] b = Arrays.copyOfRange(value, 2, end);
+
+                            NotificationService.sendReply(lastNotificationSent.action, getApplicationContext(), new String(b));
+                        }catch(PendingIntent.CanceledException e)
+                        {
+
+                        }
+                        break;
                 }
                 if(uuid != null)
                 {
                     BluetoothGattCharacteristic tempChracteristic = alertNotificationService.getCharacteristic(UUID.fromString(uuid));
                     if(chracteristicWriteQueue.containsKey(uuid) && !chracteristicWriteQueue.get(uuid).isEmpty()) //stack not empty(not notifications)
                     {
-                        String nextMessageSegment = chracteristicWriteQueue.get(uuid).peek().poll();
+                        lastNotificationSent = chracteristicWriteQueue.get(uuid).peek();
+                        String nextMessageSegment = chracteristicWriteQueue.get(uuid).peek().messages.poll();
                         if(nextMessageSegment.charAt(2) == 0x01) //the message contains more segments
                         {
                             //updateCharacteristicValueNotifyDevice(device, characteristic, nextMessageSegment);
@@ -219,7 +255,7 @@ public class BluetoothLeGatt extends Service {
                             //updateCharacteristicValue(characteristic, nextMessageStart);
                         }
                     }else{
-                        tempChracteristic.setValue((byte[])null);
+                        tempChracteristic.setValue(new byte[]{0x00, 0x00});
                     }
                     if(responseNeeded) {
                         bluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value);
@@ -662,14 +698,14 @@ public class BluetoothLeGatt extends Service {
         return notifyCharacteristicChange(device, characteristic);
     }
 
-    public boolean AddMessageToCharacteristic(BluetoothGattCharacteristic characteristic, Queue<String> message)
+    public boolean AddMessageToCharacteristic(BluetoothGattCharacteristic characteristic, Queue<String> message, NotificationCompat.Action action)
     {
         String uuid = characteristic.getUuid().toString();
         if(!chracteristicWriteQueue.containsKey(uuid))
         {
-            chracteristicWriteQueue.put(uuid, new Stack<Queue<String>>());
+            chracteristicWriteQueue.put(uuid, new Stack<Notification>());
         }
-        chracteristicWriteQueue.get(uuid).add(message);
+        chracteristicWriteQueue.get(uuid).add(new Notification(message, action));
         //updateCharacteristicValue(characteristic, message.peek());
         return true;
     }

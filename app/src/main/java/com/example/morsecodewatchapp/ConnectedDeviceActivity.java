@@ -399,31 +399,31 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements Notifi
     }
 
     @Override
-    public void NewNotification (String message, NotificationService.NotificationType notificationType) {
+    public void NewNotification (String message, char notificationType, NotificationCompat.Action action) {
         if(mBluetoothLeGatt != null) {
             message = message.replaceAll("[^\\p{ASCII}]", "");
             EditText editText = findViewById(R.id.editText);
             String textBoxString = editText.getText().toString();
             int messageSegmentLength = 17;
             int times = Byte.valueOf(String.valueOf(
-                    textBoxString.length() / messageSegmentLength)) + 1;
-            String baseMessage = message = String.valueOf((char)0x03) + String.valueOf((char)0x01);
+                    message.length() / messageSegmentLength)) + 1;
+            String baseMessage = String.valueOf(notificationType) + String.valueOf((char)0x01);
             Queue<String> messageCollection = new LinkedList<>();
 
             for(int i = 1; i <= times; i++)
             {
                 int begin = i > 1 ? (i - 1) * messageSegmentLength : 0;
-                int end = i == times ? textBoxString.length() : i * messageSegmentLength;
+                int end = i == times ? message.length() : i * messageSegmentLength;
                 Log.w(TAG, "i: " + i + "/" + times +  ", " + begin + "-" + end);
 
-                messageCollection.add(baseMessage + String.valueOf((char)(i != times ? 0x01 : 0x00)) + textBoxString.substring(begin, end));
+                messageCollection.add(baseMessage + String.valueOf((char)(i != times ? 0x01 : 0x00)) + message.substring(begin, end).toUpperCase());
             }
             //message = String.valueOf((char)0x03) + String.valueOf((char)0x01) + textBoxString.replaceAll("[^\\p{ASCII}]", "");
             //instead of updating and notifying might change when the characteristic is read it will get the next in the queue
             /*mBluetoothLeGatt.updateCharacteristicValueNotifyDevice(mBluetoothLeGatt.mainDevice,
                     mBluetoothLeGatt.alertNotificationService.getCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC)),
                     message);*/
-            mBluetoothLeGatt.AddMessageToCharacteristic(mBluetoothLeGatt.alertNotificationService.getCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC)),messageCollection);
+            mBluetoothLeGatt.AddMessageToCharacteristic(mBluetoothLeGatt.alertNotificationService.getCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC)),messageCollection, action);
         }
         txtView .append( " \n " + message) ;
     }
