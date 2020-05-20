@@ -80,11 +80,13 @@ public class BluetoothLeGatt extends Service {
     {
         Queue<String> messages;
         NotificationCompat.Action action;
+        String replyMessage;
 
         public Notification(Queue<String> _messages, NotificationCompat.Action _action)
         {
             messages = _messages;
             action = _action;
+            replyMessage = "";
         }
     }
 
@@ -221,16 +223,16 @@ public class BluetoothLeGatt extends Service {
                     case ANS_REPLY_NEW_ALERT:
                         uuid = null;
                         try {
-                            int end = 20;
-                            for (int i = 2; i < 20; i++) {
-                                if(value[i] == 0){
-                                    end = i;
-                                    break;
+                            byte[] b = Arrays.copyOfRange(value, 3, value.length);
+                            String replyMessage = new String(b);
+
+                            if(lastNotificationSent.action != null) {
+                                lastNotificationSent.replyMessage = lastNotificationSent.replyMessage.concat(replyMessage);
+                                if(value[2] == 0) {
+                                    NotificationService.sendReply(lastNotificationSent.action, getApplicationContext(), lastNotificationSent.replyMessage);
+                                    lastNotificationSent.action = null;
                                 }
                             }
-                            byte[] b = Arrays.copyOfRange(value, 2, end);
-
-                            NotificationService.sendReply(lastNotificationSent.action, getApplicationContext(), new String(b));
                         }catch(PendingIntent.CanceledException e)
                         {
 

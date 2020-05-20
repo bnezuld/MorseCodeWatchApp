@@ -56,13 +56,15 @@ public class NotificationService extends NotificationListenerService {
         CharSequence seqText = sbn.getNotification().extras.getCharSequence(Notification.EXTRA_TEXT);
         CharSequence seqTitle = sbn.getNotification().extras.getCharSequence(Notification.EXTRA_TITLE);
 
-        String Text = seqText != null ? seqText.toString() : "!nulltext!";
-        String Title = seqTitle != null ? seqTitle.toString() : "!nulltitle!";
+        String Text = seqText != null ? seqText.toString().replaceAll("[^\\p{ASCII}]", "") : "!nulltext!";
+        String Title = seqTitle != null ? seqTitle.toString().replaceAll("[^\\p{ASCII}]", "") : "!nulltitle!";
         String Message = Title + "   " + Text;
         String packageName = sbn.getPackageName();
+        String name = sbn.getOpPkg();
         Log. i ( TAG , "********** onNotificationPosted" ) ;
         Log. i ( TAG , "ID :" + sbn.getId()  + " \t " + sbn.getNotification(). tickerText + " \t " + packageName) ;
-        if(notificationListener != null && !packageName.equals("com.android.systemui") && packageName == "com.samsung.android.messaging") {
+        if(notificationListener != null && !packageName.equalsIgnoreCase("com.android.systemui") &&
+                                        (packageName.equalsIgnoreCase("com.samsung.android.messaging") &&  !Title.equalsIgnoreCase("ME"))) {
             NotificationCompat.Action action = getQuickReplyAction(sbn.getNotification(), sbn.getPackageName());
             if(action == null) {
                 notificationListener.NewNotification(Message, SIMPLE_ALERT, action);
