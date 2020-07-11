@@ -38,6 +38,9 @@ public class GattAttributes {
 
     public static String CLIENT_CHARACTERISTIC_CONFIGURATION = "00002902-0000-1000-8000-00805f9b34fb";
 
+    public static String CURRENT_TIME_SERVICE_UUID = "00001805-0000-1000-8000-00805f9b34fb";
+    public static String CURRENT_TIME_CHARACTERISTIC = "00002A2B-0000-1000-8000-00805f9b34fb";
+
 
     static {
         // Sample Services.

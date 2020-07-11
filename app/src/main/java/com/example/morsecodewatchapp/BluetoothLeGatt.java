@@ -30,6 +30,7 @@ import androidx.annotation.RequiresApi;
 import androidx.core.app.NotificationCompat;
 
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -49,9 +50,12 @@ public class BluetoothLeGatt extends Service {
     private BluetoothGatt mBluetoothGatt;
     private int mConnectionState = STATE_DISCONNECTED;
 
+    private volatile boolean serviceSetup = true;
+
     BluetoothLeAdvertiser bluetoothLeAdvertiser;
     BluetoothGattServer bluetoothGattServer;
     BluetoothGattService alertNotificationService;
+    BluetoothGattService currentTimeService;
     BluetoothDevice mainDevice;
 
     private static final int STATE_DISCONNECTED = 0;
@@ -198,13 +202,20 @@ public class BluetoothLeGatt extends Service {
         @Override
         public void onServiceAdded(int status, BluetoothGattService service) {
             super.onServiceAdded(status, service);
+            serviceSetup = true;
         }
 
         @Override
         public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) {
             super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
-            byte[] value = characteristic.getValue();
-            bluetoothGattServer.sendResponse ( device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value );
+            if (UUID.fromString(GattAttributes.CURRENT_TIME_CHARACTERISTIC).equals(characteristic.getUuid())) {
+                bluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, TimeData.exactTime256WithUpdateReason(Calendar.getInstance(), TimeData.UPDATE_REASON_UNKNOWN));
+            //} else if (LOCAL_TIME_INFO_CHARACTERISTIC_UUID.equals(characteristic.getUuid())) {
+            //    mGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, TimeData.timezoneWithDstOffset(Calendar.getInstance()));
+            }else {
+                byte[] value = characteristic.getValue();
+                bluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value);
+            }
         }
 
         @Override
@@ -446,7 +457,31 @@ public class BluetoothLeGatt extends Service {
             alertNotificationService.addCharacteristic(mUnreadAlertStatus);
             alertNotificationService.addCharacteristic(mAlertNotificationControlPoint);
 
-            bluetoothGattServer.addService(alertNotificationService);
+            while(serviceSetup == false) {
+            }
+            while(bluetoothGattServer.addService(alertNotificationService) == false)
+            {
+                Log.e(TAG, "bluetoothGattServer could not add service alertNotificationService");
+            }
+            serviceSetup = false;
+
+            //add current time service
+            currentTimeService = new BluetoothGattService(UUID.fromString(GattAttributes.CURRENT_TIME_SERVICE_UUID), BluetoothGattService.SERVICE_TYPE_PRIMARY);
+
+            BluetoothGattCharacteristic mCurrentTime = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.CURRENT_TIME_CHARACTERISTIC),
+                    BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_INDICATE | BluetoothGattCharacteristic.PROPERTY_READ | BluetoothGattCharacteristic.PROPERTY_WRITE,
+                    BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE);
+            //mCurrentTime.addDescriptor(clientCharacteristicConfigUa);
+
+            currentTimeService.addCharacteristic(mCurrentTime);
+
+            while(serviceSetup == false) {
+            }
+            while(bluetoothGattServer.addService(currentTimeService) == false)
+            {
+                Log.e(TAG, "bluetoothGattServer could not add service currentTimeService");
+            }
+            serviceSetup = false;
             return true;
         }
         return true;
