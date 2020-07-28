@@ -16,7 +16,8 @@
 
 package com.example.morsecodewatchapp;
 
-import android.app.Activity;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattService;
 import android.content.BroadcastReceiver;
@@ -28,6 +29,7 @@ import android.content.ServiceConnection;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -38,15 +40,17 @@ import android.widget.TextView;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
+import java.util.UUID;
 
-import android.app.NotificationManager;
 //import android.support.v4.app.NotificationCompat;
 
-import android.app.NotificationChannel ;
 import android.widget.Button ;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.NotificationCompat;
 
 
 /**
@@ -55,7 +59,7 @@ import androidx.appcompat.app.AppCompatActivity;
  * communicates with {@code BluetoothLeGatt}, which in turn interacts with the
  * Bluetooth LE API.
  */
-public class ConnectedDeviceActivity extends AppCompatActivity implements MyListener{
+public class ConnectedDeviceActivity extends AppCompatActivity implements NotificationListener {
     private final static String TAG = ConnectedDeviceActivity.class.getSimpleName();
 
     public static final String EXTRAS_DEVICE_NAME = "DEVICE_NAME";
@@ -98,6 +102,19 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements MyList
             mBluetoothLeGatt = null;
         }
     };
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event)
+    {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK)
+        {
+            // handle back press
+            // if (event.getAction() == KeyEvent.ACTION_DOWN)
+            mBluetoothLeGatt.RemoveAdvertisedService();
+            mBluetoothLeGatt.stopSelf();
+        }
+        return super.dispatchKeyEvent(event);
+    }
 
     // Handles various events fired by the Service.
     // ACTION_GATT_CONNECTED: connected to a GATT server.
@@ -187,8 +204,9 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements MyList
 
         //getActionBar().setTitle(mDeviceName);
         //getActionBar().setDisplayHomeAsUpEnabled(true);
-        Intent gattServiceIntent = new Intent(this, BluetoothLeGatt.class);
+        Intent gattServiceIntent = new Intent(getBaseContext(), BluetoothLeGatt.class);
         bindService(gattServiceIntent, mServiceConnection, BIND_AUTO_CREATE);
+        //startService(new Intent(getBaseContext(), BluetoothLeGatt.class));
 
         new NotificationService().setListener( this ) ;
         txtView = findViewById(R.id. textView ) ;
@@ -197,12 +215,20 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements MyList
         btnCreateNotification.setOnClickListener( new View.OnClickListener() {
             @Override
             public void onClick (View v) {
-                /*NotificationManager mNotificationManager = (NotificationManager) getSystemService( NOTIFICATION_SERVICE ) ;
-                NotificationCompat.Builder mBuilder = new NotificationCompat.Builder(DeviceControlActivity.this, default_notification_channel_id ) ;                mBuilder.setContentTitle( "My Notification" ) ;
-                mBuilder.setContentText( "Notification Listener Service Example" ) ;
-                mBuilder.setTicker( "Notification Listener Service Example" ) ;
-                mBuilder.setSmallIcon(R.drawable.ic_launcher ) ;
-                mBuilder.setAutoCancel( true ) ;
+                NotificationManager mNotificationManager =
+                        (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    NotificationChannel channel = new NotificationChannel("YOUR_CHANNEL_ID",
+                            "YOUR_CHANNEL_NAME",
+                            NotificationManager.IMPORTANCE_DEFAULT);
+                    channel.setDescription("YOUR_NOTIFICATION_CHANNEL_DESCRIPTION");
+                    mNotificationManager.createNotificationChannel(channel);
+                }
+                NotificationCompat.Builder mBuilder = new NotificationCompat.Builder(getApplicationContext(), "YOUR_CHANNEL_ID")
+                        .setSmallIcon(R.drawable.notification_icon)
+                        .setContentTitle("textTitle")
+                        .setContentText("textContent")
+                        .setPriority(NotificationCompat.PRIORITY_DEFAULT);
                 if (android.os.Build.VERSION. SDK_INT >= android.os.Build.VERSION_CODES. O ) {
                     int importance = NotificationManager. IMPORTANCE_HIGH ;
                     NotificationChannel notificationChannel = new NotificationChannel( NOTIFICATION_CHANNEL_ID , "NOTIFICATION_CHANNEL_NAME" , importance) ;
@@ -211,7 +237,7 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements MyList
                     mNotificationManager.createNotificationChannel(notificationChannel) ;
                 }
                 assert mNotificationManager != null;
-                mNotificationManager.notify(( int ) System. currentTimeMillis () , mBuilder.build()) ;*/
+                mNotificationManager.notify(( int ) System. currentTimeMillis () , mBuilder.build()) ;
             }
         }) ;
 
@@ -368,16 +394,36 @@ public class ConnectedDeviceActivity extends AppCompatActivity implements MyList
 
     public void onClickRead(View v){
         if(mBluetoothLeGatt != null) {
-            mBluetoothLeGatt.readCustomCharacteristic();
+            mBluetoothLeGatt.readAllCustomCharacteristic();
         }
     }
 
     @Override
-    public void setValue (String message) {
+    public void NewNotification (String message, char notificationType, NotificationCompat.Action action) {
         if(mBluetoothLeGatt != null) {
             message = message.replaceAll("[^\\p{ASCII}]", "");
-            mBluetoothLeGatt.writeMessage(message.toUpperCase() + "\r");
+            EditText editText = findViewById(R.id.editText);
+            String textBoxString = editText.getText().toString();
+            int messageSegmentLength = 17;
+            int times = Byte.valueOf(String.valueOf(
+                    message.length() / messageSegmentLength)) + 1;
+            String baseMessage = String.valueOf(notificationType) + String.valueOf((char)0x01);
+            Queue<String> messageCollection = new LinkedList<>();
 
+            for(int i = 1; i <= times; i++)
+            {
+                int begin = i > 1 ? (i - 1) * messageSegmentLength : 0;
+                int end = i == times ? message.length() : i * messageSegmentLength;
+                Log.w(TAG, "i: " + i + "/" + times +  ", " + begin + "-" + end);
+
+                messageCollection.add(baseMessage + String.valueOf((char)(i != times ? 0x01 : 0x00)) + message.substring(begin, end).toUpperCase());
+            }
+            //message = String.valueOf((char)0x03) + String.valueOf((char)0x01) + textBoxString.replaceAll("[^\\p{ASCII}]", "");
+            //instead of updating and notifying might change when the characteristic is read it will get the next in the queue
+            /*mBluetoothLeGatt.updateCharacteristicValueNotifyDevice(mBluetoothLeGatt.mainDevice,
+                    mBluetoothLeGatt.alertNotificationService.getCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC)),
+                    message);*/
+            mBluetoothLeGatt.AddMessageToCharacteristic(mBluetoothLeGatt.alertNotificationService.getCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC)),messageCollection, action);
         }
         txtView .append( " \n " + message) ;
     }

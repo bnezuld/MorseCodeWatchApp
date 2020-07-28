@@ -1,26 +1,46 @@
 package com.example.morsecodewatchapp;
 
+import android.app.Notification;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
+import android.bluetooth.BluetoothGattServer;
+import android.bluetooth.BluetoothGattServerCallback;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
+import android.bluetooth.le.AdvertiseCallback;
+import android.bluetooth.le.AdvertiseData;
+import android.bluetooth.le.AdvertiseSettings;
+import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Binder;
+import android.os.Build;
 import android.os.IBinder;
+import android.os.ParcelUuid;
 import android.util.Log;
 
+import androidx.annotation.RequiresApi;
+import androidx.core.app.NotificationCompat;
+
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
+import java.util.Stack;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
 
+@RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
 public class BluetoothLeGatt extends Service {
     private final static String TAG = BluetoothLeGatt.class.getSimpleName();
 
@@ -29,6 +49,14 @@ public class BluetoothLeGatt extends Service {
     private String mBluetoothDeviceAddress;
     private BluetoothGatt mBluetoothGatt;
     private int mConnectionState = STATE_DISCONNECTED;
+
+    private volatile boolean serviceSetup = true;
+
+    BluetoothLeAdvertiser bluetoothLeAdvertiser;
+    BluetoothGattServer bluetoothGattServer;
+    BluetoothGattService alertNotificationService;
+    BluetoothGattService currentTimeService;
+    BluetoothDevice mainDevice;
 
     private static final int STATE_DISCONNECTED = 0;
     private static final int STATE_CONNECTING = 1;
@@ -52,6 +80,56 @@ public class BluetoothLeGatt extends Service {
     private Queue<String> WriteQueue = new LinkedList<>();
     private Semaphore sem = new Semaphore(1);
 
+    private class Notification
+    {
+        Queue<String> messages;
+        NotificationCompat.Action action;
+        String replyMessage;
+
+        public Notification(Queue<String> _messages, NotificationCompat.Action _action)
+        {
+            messages = _messages;
+            action = _action;
+            replyMessage = "";
+        }
+    }
+
+    private Map<String, Stack<Notification>> chracteristicWriteQueue = new HashMap<>();
+    Notification lastNotificationSent = null;
+
+    AdvertiseSettings settings = new AdvertiseSettings.Builder()
+            .setConnectable(true)
+            .build();
+
+    AdvertiseData advertiseData = new AdvertiseData.Builder()
+            .setIncludeDeviceName(true)
+            .setIncludeTxPowerLevel(true)
+            .build();
+
+    AdvertiseData scanResponseData = new AdvertiseData.Builder()
+            .addServiceUuid(new ParcelUuid(UUID.fromString(GattAttributes.ALERT_NOTIFICATION_SERVICE_UUID)))
+            .setIncludeTxPowerLevel(true)
+            .build();
+
+    enum ble_ans_command_id_t
+    {
+                ANS_ENABLE_NEW_INCOMING_ALERT_NOTIFICATION(0),                 /**< Enable New Incoming Alert Notification.*/
+                ANS_ENABLE_UNREAD_CATEGORY_STATUS_NOTIFICATION(1),             /**< Enable Unread Category Status Notification.*/
+                ANS_DISABLE_NEW_INCOMING_ALERT_NOTIFICATION(2),                /**< Disable New Incoming Alert Notification.*/
+                ANS_DISABLE_UNREAD_CATEGORY_STATUS_NOTIFICATION(3),            /**< Disable Unread Category Status Notification.*/
+                ANS_NOTIFY_NEW_INCOMING_ALERT_IMMEDIATELY(4),                  /**< Notify New Incoming Alert immediately.*/
+                ANS_NOTIFY_UNREAD_CATEGORY_STATUS_IMMEDIATELY(5),              /**< Notify Unread Category Status immediately.*/
+                ANS_REPLY_NEW_ALERT(6);                                        /**< Reply New Alert.*/
+
+                private final int value;
+                private ble_ans_command_id_t(int value) {
+                    this.value = value;
+                }
+
+                public int getValue() {
+                    return value;
+                }
+    };
     // Implements callback methods for GATT events that the app cares about.  For example,
     // connection change and services discovered.
     private final BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
@@ -112,6 +190,139 @@ public class BluetoothLeGatt extends Service {
         public void onCharacteristicChanged(BluetoothGatt gatt,
                                             BluetoothGattCharacteristic characteristic) {
             broadcastUpdate(ACTION_DATA_AVAILABLE, characteristic);
+        }
+    };
+
+    BluetoothGattServerCallback mGattServercallback = new BluetoothGattServerCallback() {
+        @Override
+        public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
+            super.onConnectionStateChange(device, status, newState);
+        }
+
+        @Override
+        public void onServiceAdded(int status, BluetoothGattService service) {
+            super.onServiceAdded(status, service);
+            serviceSetup = true;
+        }
+
+        @Override
+        public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) {
+            super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
+            if (UUID.fromString(GattAttributes.CURRENT_TIME_CHARACTERISTIC).equals(characteristic.getUuid())) {
+                bluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, TimeData.exactTime256WithUpdateReason(Calendar.getInstance(), TimeData.UPDATE_REASON_UNKNOWN));
+            //} else if (LOCAL_TIME_INFO_CHARACTERISTIC_UUID.equals(characteristic.getUuid())) {
+            //    mGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, TimeData.timezoneWithDstOffset(Calendar.getInstance()));
+            }else {
+                byte[] value = characteristic.getValue();
+                bluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value);
+            }
+        }
+
+        @Override
+        public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
+            super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value);
+            characteristic.setValue(value);
+            if(characteristic.getUuid().toString().trim().equalsIgnoreCase(GattAttributes.ALERT_NOTIFICATION_CONTROL)){
+                String uuid = null;
+                switch (ble_ans_command_id_t.values()[(int)value[0]]) {
+                    case ANS_NOTIFY_NEW_INCOMING_ALERT_IMMEDIATELY:
+                        uuid = GattAttributes.NEW_ALERT_CHARACTERISTIC;
+                        break;
+                    case ANS_NOTIFY_UNREAD_CATEGORY_STATUS_IMMEDIATELY:
+                        uuid = GattAttributes.UNREAD_CHARACTERISTIC;
+                        break;
+                    case ANS_REPLY_NEW_ALERT:
+                        uuid = null;
+                        try {
+                            byte[] b = Arrays.copyOfRange(value, 3, value.length);
+                            String replyMessage = new String(b);
+
+                            if(lastNotificationSent.action != null) {
+                                lastNotificationSent.replyMessage = lastNotificationSent.replyMessage.concat(replyMessage);
+                                if(value[2] == 0) {
+                                    NotificationService.sendReply(lastNotificationSent.action, getApplicationContext(), lastNotificationSent.replyMessage);
+                                    lastNotificationSent.action = null;
+                                }
+                            }
+                        }catch(PendingIntent.CanceledException e)
+                        {
+
+                        }
+                        break;
+                }
+                if(uuid != null)
+                {
+                    BluetoothGattCharacteristic tempChracteristic = alertNotificationService.getCharacteristic(UUID.fromString(uuid));
+                    if(chracteristicWriteQueue.containsKey(uuid) && !chracteristicWriteQueue.get(uuid).isEmpty()) //stack not empty(not notifications)
+                    {
+                        lastNotificationSent = chracteristicWriteQueue.get(uuid).peek();
+                        String nextMessageSegment = chracteristicWriteQueue.get(uuid).peek().messages.poll();
+                        if(nextMessageSegment.charAt(2) == 0x01) //the message contains more segments
+                        {
+                            //updateCharacteristicValueNotifyDevice(device, characteristic, nextMessageSegment);
+                            updateCharacteristicValue(tempChracteristic, nextMessageSegment);
+                        }else{ //this is the last segment, so the next time it will read the next newest notification
+                            chracteristicWriteQueue.get(uuid).pop();//remove currect stacked notification
+                            updateCharacteristicValue(tempChracteristic, nextMessageSegment);
+                            //String nextMessageStart = chracteristicWriteQueue.get(uuid).peek().peek();//start the message for next notification
+                            //updateCharacteristicValue(characteristic, nextMessageStart);
+                        }
+                    }else{
+                        tempChracteristic.setValue(new byte[]{0x00, 0x00});
+                    }
+                    if(responseNeeded) {
+                        bluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value);
+                    }
+                    notifyCharacteristicChange(device, tempChracteristic);
+                    return;
+                }
+            }
+            if(responseNeeded) {
+                bluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value);
+            }
+        }
+
+        @Override
+        public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
+            super.onDescriptorWriteRequest(device, requestId, descriptor, preparedWrite, responseNeeded, offset, value);
+            descriptor.setValue(value);
+            if(responseNeeded) {
+                bluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value);
+            }
+        }
+
+        @Override
+        public void onDescriptorReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattDescriptor descriptor) {
+            super.onDescriptorReadRequest(device, requestId, offset, descriptor);
+            byte[] value = descriptor.getValue();
+            bluetoothGattServer.sendResponse ( device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value );
+        }
+
+        @Override
+        public void onNotificationSent(BluetoothDevice device, int status) {
+            super.onNotificationSent(device, status);
+        }
+
+        @Override
+        public void onMtuChanged(BluetoothDevice device, int mtu) {
+            super.onMtuChanged(device, mtu);
+        }
+
+        @Override
+        public void onExecuteWrite(BluetoothDevice device, int requestId, boolean execute) {
+            super.onExecuteWrite(device, requestId, execute);
+        }
+    };
+
+    AdvertiseCallback advertiseCallback = new AdvertiseCallback() {
+        @Override
+        public void onStartSuccess(AdvertiseSettings settingsInEffect) {
+            Log.d(TAG, "BLE advertisement added successfully");
+        }
+
+        @Override
+        public void onStartFailure(int errorCode) {
+            Log.e(TAG, "Failed to add BLE advertisement, reason: " + errorCode);
         }
     };
 
@@ -178,6 +389,123 @@ public class BluetoothLeGatt extends Service {
             return false;
         }
 
+        if(CreateAdvertisedService() == false){
+            Log.e(TAG, "Unable to obtain Advertise service.");
+            return false;
+        }
+
+        return true;
+    }
+
+    public boolean CreateAdvertisedService(){
+
+        if (mBluetoothAdapter == null) {
+            Log.e(TAG, "Unable to obtain a BluetoothAdapter.");
+            return false;
+        }
+        if(bluetoothLeAdvertiser == null) {
+            bluetoothLeAdvertiser = mBluetoothAdapter.getBluetoothLeAdvertiser();
+            bluetoothLeAdvertiser.startAdvertising(settings, advertiseData, scanResponseData, advertiseCallback);
+
+
+            if (mBluetoothManager == null) {
+                Log.e(TAG, "Unable to obtain a BluetoothManager.");
+                return false;
+            }
+            bluetoothGattServer = mBluetoothManager.openGattServer(getApplicationContext(), mGattServercallback);
+            alertNotificationService = new BluetoothGattService(UUID.fromString(GattAttributes.ALERT_NOTIFICATION_SERVICE_UUID), BluetoothGattService.SERVICE_TYPE_PRIMARY);
+
+            BluetoothGattCharacteristic mSupportedNewAlertCategory = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CATAGORY),
+                    BluetoothGattCharacteristic.PROPERTY_READ | BluetoothGattCharacteristic.PROPERTY_WRITE,
+                    BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE);
+            mSupportedNewAlertCategory.setValue(new byte[]{0x1f});
+            /*
+             * New alert part (char & descriptor)
+             * */
+            BluetoothGattDescriptor clientCharacteristicConfigNa = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION),
+                    BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE);
+            clientCharacteristicConfigNa.setValue(new byte[]{0x1f});
+
+            BluetoothGattCharacteristic mNewAlert = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC),
+                    BluetoothGattCharacteristic.PROPERTY_WRITE | BluetoothGattCharacteristic.PROPERTY_INDICATE | BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_READ,
+                    BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE);
+
+            mNewAlert.addDescriptor(clientCharacteristicConfigNa);
+            /*
+             * Unread alert status associated with new alert
+             * */
+            BluetoothGattDescriptor clientCharacteristicConfigUa = new BluetoothGattDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION), BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE);
+            clientCharacteristicConfigUa.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+
+            BluetoothGattCharacteristic mUnreadAlertStatus = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.UNREAD_CHARACTERISTIC),
+                    BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_INDICATE | BluetoothGattCharacteristic.PROPERTY_READ | BluetoothGattCharacteristic.PROPERTY_WRITE,
+                    BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE);
+            mUnreadAlertStatus.addDescriptor(clientCharacteristicConfigUa);
+
+            BluetoothGattCharacteristic mSupportedUnreadCategory = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.UNREAD_CATAGORY),
+                    BluetoothGattCharacteristic.PROPERTY_READ | BluetoothGattCharacteristic.PROPERTY_INDICATE | BluetoothGattCharacteristic.PROPERTY_NOTIFY  | BluetoothGattCharacteristic.PROPERTY_WRITE,
+                    BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE);
+            mSupportedUnreadCategory.setValue(new byte[]{0x1f});
+
+            BluetoothGattCharacteristic mAlertNotificationControlPoint = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.ALERT_NOTIFICATION_CONTROL),
+                    BluetoothGattCharacteristic.PROPERTY_READ | BluetoothGattCharacteristic.PROPERTY_INDICATE | BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_WRITE,
+                    BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE);
+
+            alertNotificationService.addCharacteristic(mSupportedNewAlertCategory);
+            alertNotificationService.addCharacteristic(mNewAlert);
+            alertNotificationService.addCharacteristic(mSupportedUnreadCategory);
+            alertNotificationService.addCharacteristic(mUnreadAlertStatus);
+            alertNotificationService.addCharacteristic(mAlertNotificationControlPoint);
+
+            while(serviceSetup == false) {
+            }
+            while(bluetoothGattServer.addService(alertNotificationService) == false)
+            {
+                Log.e(TAG, "bluetoothGattServer could not add service alertNotificationService");
+            }
+            serviceSetup = false;
+
+            //add current time service
+            currentTimeService = new BluetoothGattService(UUID.fromString(GattAttributes.CURRENT_TIME_SERVICE_UUID), BluetoothGattService.SERVICE_TYPE_PRIMARY);
+
+            BluetoothGattCharacteristic mCurrentTime = new BluetoothGattCharacteristic(UUID.fromString(GattAttributes.CURRENT_TIME_CHARACTERISTIC),
+                    BluetoothGattCharacteristic.PROPERTY_NOTIFY | BluetoothGattCharacteristic.PROPERTY_INDICATE | BluetoothGattCharacteristic.PROPERTY_READ | BluetoothGattCharacteristic.PROPERTY_WRITE,
+                    BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattCharacteristic.PERMISSION_WRITE);
+            //mCurrentTime.addDescriptor(clientCharacteristicConfigUa);
+
+            currentTimeService.addCharacteristic(mCurrentTime);
+
+            while(serviceSetup == false) {
+            }
+            while(bluetoothGattServer.addService(currentTimeService) == false)
+            {
+                Log.e(TAG, "bluetoothGattServer could not add service currentTimeService");
+            }
+            serviceSetup = false;
+            return true;
+        }
+        return true;
+    }
+
+    public boolean RemoveAdvertisedService(){
+        if(bluetoothLeAdvertiser == null){
+            Log.e(TAG, "Unable to obtain a BluetoothLeAdvertiser.");
+            return false;
+        }
+        if (bluetoothGattServer == null) {
+            Log.e(TAG, "Unable to obtain a BluetoothGattServer.");
+            return false;
+        }
+        bluetoothGattServer.removeService(alertNotificationService);
+        //bluetoothGattServer.close();
+
+        if (mBluetoothAdapter == null) {
+            Log.e(TAG, "Unable to obtain a BluetoothAdapter.");
+            return false;
+        }
+        bluetoothLeAdvertiser.stopAdvertising(advertiseCallback);
+        bluetoothLeAdvertiser = null;
+
         return true;
     }
 
@@ -209,14 +537,14 @@ public class BluetoothLeGatt extends Service {
             }
         }
 
-        final BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
-        if (device == null) {
+        mainDevice = mBluetoothAdapter.getRemoteDevice(address);
+        if (mainDevice == null) {
             Log.w(TAG, "Device not found.  Unable to connect.");
             return false;
         }
         // We want to directly connect to the device, so we are setting the autoConnect
         // parameter to false.
-        mBluetoothGatt = device.connectGatt(this, false, mGattCallback);
+        mBluetoothGatt = mainDevice.connectGatt(this, false, mGattCallback);
         Log.d(TAG, "Trying to create a new connection.");
         mBluetoothDeviceAddress = address;
         mConnectionState = STATE_CONNECTING;
@@ -245,6 +573,8 @@ public class BluetoothLeGatt extends Service {
         if (mBluetoothGatt == null) {
             return;
         }
+        RemoveAdvertisedService();
+
         mBluetoothGatt.close();
         mBluetoothGatt = null;
     }
@@ -277,7 +607,7 @@ public class BluetoothLeGatt extends Service {
             Log.w(TAG, "BluetoothAdapter not initialized");
             return;
         }
-        mBluetoothGatt.setCharacteristicNotification(characteristic, enabled);
+        //mBluetoothGatt.setCharacteristicNotification(characteristic, enabled);
 
         // This is specific to Heart Rate Measurement.
         /*if (UUID_HEART_RATE_MEASUREMENT.equals(characteristic.getUuid())) {
@@ -294,7 +624,13 @@ public class BluetoothLeGatt extends Service {
      *
      * @return A {@code List} of supported services.
      */
-    public void readCustomCharacteristic() {
+    public List<BluetoothGattService> getSupportedGattServices() {
+        if (mBluetoothGatt == null) return null;
+
+        return mBluetoothGatt.getServices();
+    }
+
+    public void readAllCustomCharacteristic() {
         try {
             if (mBluetoothAdapter == null || mBluetoothGatt == null) {
                 Log.w(TAG, "BluetoothAdapter not initialized");
@@ -343,14 +679,14 @@ public class BluetoothLeGatt extends Service {
             }
 
             /*check if the service is available on the device*/
-            BluetoothGattService mCustomService = mBluetoothGatt.getService(UUID.fromString(GattAttributes.UART_SERVICE_UUID));
+            BluetoothGattService mCustomService = mBluetoothGatt.getService(UUID.fromString(GattAttributes.ALERT_NOTIFICATION_SERVICE_UUID));
             if (mCustomService == null) {
                 Log.w(TAG, "Custom BLE Service not found");
                 return false;
             }
 
             /*get the read characteristic from the service*/
-            BluetoothGattCharacteristic mWriteCharacteristic = mCustomService.getCharacteristic(UUID.fromString(GattAttributes.TX_CHARACTERISTIC));
+            BluetoothGattCharacteristic mWriteCharacteristic = mCustomService.getCharacteristic(UUID.fromString(GattAttributes.NEW_ALERT_CHARACTERISTIC));
             mWriteCharacteristic.setValue(value);//, BluetoothGattCharacteristic.FORMAT_UINT8,0);
             if (mBluetoothGatt.writeCharacteristic(mWriteCharacteristic) == false) {
                 Log.w(TAG, "Failed to write characteristic");
@@ -377,12 +713,41 @@ public class BluetoothLeGatt extends Service {
 
             writeCustomCharacteristic(Message.substring(begin, end));
         }
-
     }
 
-    public List<BluetoothGattService> getSupportedGattServices() {
-        if (mBluetoothGatt == null) return null;
+    public void updateCharacteristicValue(BluetoothGattCharacteristic characteristic, String value)
+    {
+        if(value.length() < 20) {
+            char[] charArray = new char[20 - value.length()];
+            Arrays.fill(charArray, '\0');
+            value += new String(charArray);
+        }
+        characteristic.setValue(value);//new byte[]{0x03, 0x01, 0x4d, 0x61,0x72, 0x79});
+    }
 
-        return mBluetoothGatt.getServices();
+    public boolean notifyCharacteristicChange(BluetoothDevice device, BluetoothGattCharacteristic characteristic)
+    {
+        if(characteristic.getDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION)) != null && Arrays.equals(characteristic.getDescriptor(UUID.fromString(GattAttributes.CLIENT_CHARACTERISTIC_CONFIGURATION)).getValue(), BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)) {
+            return bluetoothGattServer.notifyCharacteristicChanged(device, characteristic, false);
+        }
+        return false;
+    }
+
+    public boolean updateCharacteristicValueNotifyDevice(BluetoothDevice device, BluetoothGattCharacteristic characteristic, String value)
+    {
+        updateCharacteristicValue(characteristic, value);
+        return notifyCharacteristicChange(device, characteristic);
+    }
+
+    public boolean AddMessageToCharacteristic(BluetoothGattCharacteristic characteristic, Queue<String> message, NotificationCompat.Action action)
+    {
+        String uuid = characteristic.getUuid().toString();
+        if(!chracteristicWriteQueue.containsKey(uuid))
+        {
+            chracteristicWriteQueue.put(uuid, new Stack<Notification>());
+        }
+        chracteristicWriteQueue.get(uuid).add(new Notification(message, action));
+        //updateCharacteristicValue(characteristic, message.peek());
+        return true;
     }
 }
